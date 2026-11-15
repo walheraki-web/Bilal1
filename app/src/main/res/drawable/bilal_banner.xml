@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 320x180 TV banner: green field with a crescent and the name area -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path android:fillColor="#0E1A17" android:pathData="M0,0h320v180h-320z" />
+    <path android:fillColor="#2BB673" android:pathData="M0,150h320v30h-320z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M160,30a45,45 0,1 0,0.1 90a36,36 0,1 1,-0.1 -90z" />
+    <path android:fillColor="#2BB673"
+        android:pathData="M196,62l4,10l11,0l-9,7l3,11l-9,-6l-9,6l3,-11l-9,-7l11,0z" />
+</vector>
