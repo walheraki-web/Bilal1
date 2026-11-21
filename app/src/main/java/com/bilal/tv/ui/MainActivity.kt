@@ -51,10 +51,23 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         prefs = Prefs(this)
         BLog.init(this)
         setContentView(buildUi())
+        requestRuntimePermissions()
         ensureOverlayPermission()
         val intent = Intent(this, BilalService::class.java)
         startForegroundService(intent)
         bindService(intent, conn, Context.BIND_AUTO_CREATE)
+    }
+
+    private fun requestRuntimePermissions() {
+        val need = mutableListOf<String>()
+        val wanted = listOf(
+            android.Manifest.permission.RECORD_AUDIO,
+            android.Manifest.permission.POST_NOTIFICATIONS,
+        )
+        for (p in wanted) {
+            if (checkSelfPermission(p) != android.content.pm.PackageManager.PERMISSION_GRANTED) need += p
+        }
+        if (need.isNotEmpty()) runCatching { requestPermissions(need.toTypedArray(), 42) }
     }
 
     override fun onDestroy() {
@@ -118,8 +131,10 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
 
     private fun refreshStations() {
         stationsBox.removeAllViews()
-        val stations = prefs.stations.ifEmpty {
-            listOf(Station("مثال: إذاعة", "https://example.com/stream.m3u8"))
+        val stations = prefs.stations
+        if (stations.isEmpty()) {
+            stationsBox.addView(label("لا توجد محطات بعد. أضف محطة برابط بثّ (m3u8 أو mp3) من الأسفل."))
+            return
         }
         for (s in stations) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
