@@ -84,7 +84,10 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
             setPadding(40, 32, 40, 32)
             setBackgroundColor(Color.parseColor("#0E1A17"))
         }
-        root.addView(title("Bilal"))
+        val version = runCatching {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        }.getOrNull() ?: "?"
+        root.addView(title("Bilal — $version"))
 
         status = label("—")
         result = label(prefs.sp.getString("lastSyncResult", "لم تُجرَ مزامنة بعد")!!)
@@ -231,15 +234,28 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         text = t; textSize = 16f; setTextColor(Color.WHITE); setPadding(0, 4, 0, 4)
     }
 
+    private fun buttonBg(focused: Boolean) = android.graphics.drawable.GradientDrawable().apply {
+        cornerRadius = 14f
+        setColor(Color.parseColor(if (focused) "#2BB673" else "#1C2C27"))
+        setStroke(if (focused) 5 else 3, Color.parseColor(if (focused) "#8CF2C2" else "#2BB673"))
+    }
+
     private fun button(t: String, onClick: (View) -> Unit) = Button(this).apply {
         text = t; isAllCaps = false
-        setTextColor(Color.WHITE); setBackgroundColor(Color.parseColor("#1C2C27"))
+        textSize = 18f
+        setTextColor(Color.WHITE)
+        background = buttonBg(false)
         gravity = Gravity.CENTER
+        minHeight = 120
+        setPadding(36, 24, 36, 24)
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { setMargins(8, 8, 8, 8) }
+        ).apply { setMargins(10, 10, 10, 10) }
         layoutParams = lp
         isFocusable = true
+        isFocusableInTouchMode = false
+        // Bright highlight so the TV remote's position is unmistakable.
+        setOnFocusChangeListener { v, hasFocus -> v.background = buttonBg(hasFocus) }
         setOnClickListener(onClick)
     }
 

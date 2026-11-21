@@ -65,11 +65,13 @@ class Prefs(context: Context) {
 
     var stations: List<Station>
         get() {
-            val arr = JSONArray(sp.getString("stations", "[]"))
-            return (0 until arr.length()).map {
-                val o = arr.getJSONObject(it)
-                Station(o.getString("name"), o.getString("url"))
-            }
+            return runCatching {
+                val arr = JSONArray(sp.getString("stations", "[]"))
+                (0 until arr.length()).map {
+                    val o = arr.getJSONObject(it)
+                    Station(o.getString("name"), o.getString("url"))
+                }
+            }.getOrDefault(emptyList())
         }
         set(list) {
             val arr = JSONArray()
