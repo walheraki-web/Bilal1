@@ -71,15 +71,27 @@ class BilalService : Service() {
         BLog.init(this)
         prefs = Prefs(this)
         receiver = ReceiverControl(this)
-        player = StationPlayer(
-            context = this,
-            onTap = { buf, ch, rate, t -> pushStationTap(buf, ch, rate, t) },
-            onRecovered = { onStreamRecovered() },
-            onStatus = { status(it) },
-        )
+        // Build the player defensively: if media3 fails to initialise on this box,
+        // log it and keep the service (and UI) alive instead of crashing the app.
+        try {
+            player = StationPlayer(
+                context = this,
+                onTap = { buf, ch, rate, t -> pushStationTap(buf, ch, rate, t) },
+                onRecovered = { onStreamRecovered() },
+                onStatus = { status(it) },
+            )
+            playerReady = true
+            BLog.i("player ready")
+        } catch (t: Throwable) {
+            BLog.e("player init failed", t)
+            lastResult = "تعذّر تهيئة المشغّل: ${t.message}"
+        }
         createChannel()
-        startForeground(1, buildNotification(lastResult))
+        runCatching { startForeground(1, buildNotification(lastResult)) }
+            .onFailure { BLog.e("startForeground", it) }
     }
+
+    @Volatile private var playerReady = false
 
     override fun onBind(intent: Intent?): IBinder = binder
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
@@ -87,6 +99,7 @@ class BilalService : Service() {
     // --- playback ---
 
     fun play(station: Station) {
+        if (!playerReady) { status("المشغّل غير جاهز — راجع السجل"); return }
         currentStation = station
         prefs.lastStationUrl = station.url
         playing = true
@@ -100,9 +113,9 @@ class BilalService : Service() {
     fun stopPlayback() {
         playing = false
         syncJob?.cancel(); syncJob = null; syncing = false
-        player.stop()
+        if (playerReady) player.stop()
         stopTvCapture()
-        receiver.muteTv(false)
+        runCatching { receiver.muteTv(false) }
         status("توقف")
     }
 
@@ -153,7 +166,7 @@ class BilalService : Service() {
 
     fun cancelSync() {
         syncJob?.cancel(); syncJob = null; syncing = false
-        player.setTapping(false)
+        if (playerReady) player.setTapping(false)
         status("أُلغيت المزامنة")
     }
 
@@ -223,7 +236,7 @@ class BilalService : Service() {
     override fun onDestroy() {
         stopPlayback()
         setSubtitlesEnabled(false)
-        player.release()
+        if (playerReady) runCatching { player.release() }
         super.onDestroy()
     }
 }
