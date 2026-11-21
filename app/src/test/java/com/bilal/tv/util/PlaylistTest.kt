@@ -51,4 +51,18 @@ class PlaylistTest {
         val s = Playlist.parse("A,http://same\nB,http://same")
         assertEquals(1, s.size)
     }
+
+    @Test fun parsesIpaudioCfg() {
+        val cfg = """
+            # ipaudio: 0|k|
+            0|FoX FM Live 1|http://foxfm.xyz:8080/live1#
+            0|FoX FM 2|http://foxfm.xyz/2#
+            0|FoX FM EN 1|http://foxfm.xyz:8080/en1#
+        """.trimIndent()
+        val s = Playlist.parse(cfg)
+        assertEquals(3, s.size)
+        assertEquals("FoX FM Live 1", s[0].name)
+        assertEquals("http://foxfm.xyz:8080/live1", s[0].url) // trailing # stripped
+        assertEquals("FoX FM EN 1", s[2].name)
+    }
 }
