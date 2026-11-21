@@ -91,7 +91,7 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(36, 28, 36, 28)
+            setPadding(24, 16, 24, 16)
             // Semi-transparent so the panel reads over live video, like ZHE.
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.parseColor("#E60E1A17"))
@@ -136,7 +136,17 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
 
         panel.addView(section("المحطة (قناة الصوت)"))
         stationsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        panel.addView(stationsBox)
+        // Cap the (possibly long) station list to its own scroll area so the rest
+        // of the panel stays reachable with the remote.
+        val stationsScroll = ScrollView(this).apply {
+            isFocusable = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                (resources.displayMetrics.density * 200).toInt(),
+            )
+            addView(stationsBox)
+        }
+        panel.addView(stationsScroll)
         refreshStations()
         panel.addView(addStationRow())
         panel.addView(importRow())
@@ -170,9 +180,9 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
             isFillViewport = false
             addView(panel)
         }
-        // Panel pinned to the right, ~48% width, full height — live video at left.
+        // Panel pinned to the right, ~58% width, full height — live video at left.
         val lp = FrameLayout.LayoutParams(
-            (resources.displayMetrics.widthPixels * 0.50f).toInt(),
+            (resources.displayMetrics.widthPixels * 0.58f).toInt(),
             FrameLayout.LayoutParams.MATCH_PARENT,
         ).apply { gravity = Gravity.END }
         frame.addView(scroll, lp)
@@ -385,15 +395,15 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
     // --- tiny view helpers ---
 
     private fun title(t: String) = TextView(this).apply {
-        text = t; textSize = 30f; setTextColor(Color.parseColor("#2BB673")); setPadding(0, 0, 0, 16)
+        text = t; textSize = 20f; setTextColor(Color.parseColor("#2BB673")); setPadding(0, 0, 0, 10)
     }
 
     private fun section(t: String) = TextView(this).apply {
-        text = t; textSize = 18f; setTextColor(Color.parseColor("#8FB7A8")); setPadding(0, 28, 0, 8)
+        text = t; textSize = 14f; setTextColor(Color.parseColor("#8FB7A8")); setPadding(0, 16, 0, 4)
     }
 
     private fun label(t: String) = TextView(this).apply {
-        text = t; textSize = 16f; setTextColor(Color.WHITE); setPadding(0, 4, 0, 4)
+        text = t; textSize = 12f; setTextColor(Color.parseColor("#C8D8D2")); setPadding(0, 2, 0, 2)
     }
 
     private fun buttonBg(focused: Boolean) = android.graphics.drawable.GradientDrawable().apply {
@@ -404,15 +414,16 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
 
     private fun button(t: String, onClick: (View) -> Unit) = Button(this).apply {
         text = t; isAllCaps = false
-        textSize = 18f
+        textSize = 14f
         setTextColor(Color.WHITE)
         background = buttonBg(false)
         gravity = Gravity.CENTER
-        minHeight = 120
-        setPadding(36, 24, 36, 24)
+        minHeight = 0
+        minimumHeight = 0
+        setPadding(22, 12, 22, 12)
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { setMargins(10, 10, 10, 10) }
+        ).apply { setMargins(6, 6, 6, 6) }
         layoutParams = lp
         isFocusable = true
         isFocusableInTouchMode = false

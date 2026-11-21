@@ -38,27 +38,28 @@ class BilalKeyService : AccessibilityService() {
                 prefs.learnPanelKey = false
                 BLog.i("panel key learned: $code")
             }
-            return true // swallow both down and up while learning
+            return false // never block the key, even while learning
         }
 
         // If a key was explicitly learned, a single press of it opens the panel.
+        // We do NOT consume it (returning true can stall this box's input), we
+        // just open the panel as a side effect.
         if (prefs.panelKey != -1 && code == prefs.panelKey) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) openPanel()
-            return true
+            return false
         }
 
-        // Default shortcut: double-press the RED button.
-        if (code == KeyEvent.KEYCODE_PROG_RED) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                val now = event.eventTime
-                if (now - lastRedDown in 1..DOUBLE_MS) {
-                    lastRedDown = 0
-                    openPanel()
-                } else {
-                    lastRedDown = now
-                }
+        // Default shortcut: double-press the RED button. Never consumed.
+        if (code == KeyEvent.KEYCODE_PROG_RED &&
+            event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0
+        ) {
+            val now = event.eventTime
+            if (now - lastRedDown in 1..DOUBLE_MS) {
+                lastRedDown = 0
+                openPanel()
+            } else {
+                lastRedDown = now
             }
-            return true // consume red so a stray single press does nothing
         }
         return false
     }
