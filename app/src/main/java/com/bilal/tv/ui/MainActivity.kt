@@ -148,7 +148,9 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         panel.addView(label("فعّل الخدمة مرة واحدة، ثم «تعليم الزر» واضغط أي زر فارغ على الريموت (مثل الزر الأحمر). بعدها يفتح اللوحة فوق القناة."))
 
         panel.addView(section("مصدر صوت الريسيفر"))
-        panel.addView(button("تفعيل التقاط صوت الريسيفر (Shizuku)") { service?.enableReceiverCapture() })
+        panel.addView(button("التقاط مباشر (بلا Shizuku)") { service?.enableDirectReceiverCapture() })
+        panel.addView(button("التقاط عبر Shizuku") { service?.enableReceiverCapture() })
+        panel.addView(label("جرّب «التقاط مباشر» أولًا بعد منح Bilal صلاحية التقاط الصوت من مدير صلاحيات الصندوق. إن فشل، استخدم Shizuku."))
 
         panel.addView(section("ترجمة الفيلم (ملف SRT)"))
         panel.addView(subtitleRows())

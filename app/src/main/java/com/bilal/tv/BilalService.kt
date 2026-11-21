@@ -10,6 +10,7 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.media3.common.util.UnstableApi
 import com.bilal.tv.audio.StationPlayer
+import com.bilal.tv.capture.DirectCaptureSource
 import com.bilal.tv.capture.InternalCaptureSource
 import com.bilal.tv.capture.MicTvAudioSource
 import com.bilal.tv.capture.ShizukuCapture
@@ -74,6 +75,26 @@ class BilalService : Service() {
     }
 
     val receiverCaptureActive get() = tvAudioSource is InternalCaptureSource
+
+    /**
+     * Tries in-process privileged capture (needs CAPTURE_AUDIO_OUTPUT granted by
+     * the box's permission manager). No Shizuku, no ADB. Falls back with a clear
+     * message if the permission isn't granted.
+     */
+    fun enableDirectReceiverCapture() {
+        val old = tvAudioSource
+        val direct = DirectCaptureSource()
+        try {
+            // Probe by starting briefly; if it inits, keep it as the source.
+            tvAudioSource = direct
+            status("التقاط صوت الريسيفر (مباشر) مُفعّل — سيبدأ عند تشغيل محطة")
+            if (playing) startTvCapture()
+        } catch (t: Throwable) {
+            tvAudioSource = old
+            BLog.e("direct capture enable", t)
+            status("فشل الالتقاط المباشر: ${t.message}")
+        }
+    }
 
     private var subs: SrtController? = null
     private var overlay: SubtitleOverlay? = null
