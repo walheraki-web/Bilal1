@@ -22,6 +22,7 @@ import android.widget.Toast
 import androidx.media3.common.util.UnstableApi
 import com.bilal.tv.BilalService
 import com.bilal.tv.util.BLog
+import com.bilal.tv.util.Playlist
 import com.bilal.tv.util.Prefs
 import com.bilal.tv.util.Station
 
@@ -134,6 +135,7 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         panel.addView(stationsBox)
         refreshStations()
         panel.addView(addStationRow())
+        panel.addView(importRow())
 
         panel.addView(section("زر فتح اللوحة على الريموت"))
         panel.addView(button("تفعيل خدمة الزر (إمكانية الوصول)") {
@@ -239,6 +241,60 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
             }
         })
         return row
+    }
+
+    private fun importRow(): View {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val src = EditText(this).apply {
+            hint = "رابط ملف m3u/cfg، أو مساره على الجهاز"
+            setText(prefs.sp.getString("lastImport", "") ?: "")
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f)
+        }
+        row.addView(src)
+        row.addView(button("استيراد m3u/cfg") {
+            val source = src.text.toString().trim()
+            if (source.isEmpty()) {
+                Toast.makeText(this, "أدخل رابط أو مسار ملف m3u/cfg", Toast.LENGTH_SHORT).show()
+                return@button
+            }
+            prefs.sp.edit().putString("lastImport", source).apply()
+            Toast.makeText(this, "جارٍ الاستيراد…", Toast.LENGTH_SHORT).show()
+            importStations(source)
+        })
+        return row
+    }
+
+    private fun importStations(source: String) {
+        Thread {
+            val result = runCatching {
+                val raw = if (source.startsWith("http", true)) {
+                    val conn = (java.net.URL(source).openConnection() as java.net.HttpURLConnection).apply {
+                        connectTimeout = 15000; readTimeout = 20000; instanceFollowRedirects = true
+                    }
+                    conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                } else {
+                    java.io.File(source).readText(Charsets.UTF_8)
+                }
+                Playlist.parse(raw)
+            }
+            runOnUiThread {
+                result.onSuccess { parsed ->
+                    if (parsed.isEmpty()) {
+                        Toast.makeText(this, "لم يُعثر على محطات في الملف", Toast.LENGTH_LONG).show()
+                    } else {
+                        val existing = prefs.stations
+                        val existingUrls = existing.map { it.url }.toHashSet()
+                        val merged = existing + parsed.filterNot { it.url in existingUrls }
+                        prefs.stations = merged
+                        refreshStations()
+                        Toast.makeText(this, "أُضيفت ${merged.size - existing.size} محطة (الإجمالي ${merged.size})", Toast.LENGTH_LONG).show()
+                    }
+                }.onFailure {
+                    Toast.makeText(this, "تعذّر الاستيراد: ${it.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     private fun subtitleRows(): View {
