@@ -34,6 +34,10 @@ import com.bilal.tv.util.Station
 @UnstableApi
 class MainActivity : android.app.Activity(), BilalService.Listener {
 
+    private companion object {
+        const val REQ_PICK_PLAYLIST = 91
+    }
+
     private lateinit var prefs: Prefs
     private var service: BilalService? = null
     private lateinit var status: TextView
@@ -244,31 +248,40 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
     }
 
     private fun importRow(): View {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        // Browse the USB flash drive / storage and pick a file.
+        box.addView(button("اختر ملف من الفلاشة (cfg / m3u)") {
+            runCatching {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("*/*"))
+                }
+                startActivityForResult(intent, REQ_PICK_PLAYLIST)
+            }.onFailure {
+                Toast.makeText(this, "تعذّر فتح متصفّح الملفات: ${it.message}", Toast.LENGTH_LONG).show()
+            }
+        })
+
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val src = EditText(this).apply {
-            hint = "رابط ملف m3u/cfg، أو مساره على الجهاز"
+            hint = "أو رابط/مسار ملف m3u/cfg"
             setText(prefs.sp.getString("lastImport", "") ?: "")
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f)
         }
         row.addView(src)
-        row.addView(button("استيراد m3u/cfg") {
+        row.addView(button("استيراد") {
             val source = src.text.toString().trim()
             if (source.isEmpty()) {
-                Toast.makeText(this, "أدخل رابط أو مسار ملف m3u/cfg", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "اختر ملفًا من الفلاشة، أو أدخل رابط/مسار", Toast.LENGTH_SHORT).show()
                 return@button
             }
             prefs.sp.edit().putString("lastImport", source).apply()
             Toast.makeText(this, "جارٍ الاستيراد…", Toast.LENGTH_SHORT).show()
-            importStations(source)
-        })
-        return row
-    }
-
-    private fun importStations(source: String) {
-        Thread {
-            val result = runCatching {
-                val raw = if (source.startsWith("http", true)) {
+            importStations {
+                if (source.startsWith("http", true)) {
                     val conn = (java.net.URL(source).openConnection() as java.net.HttpURLConnection).apply {
                         connectTimeout = 15000; readTimeout = 20000; instanceFollowRedirects = true
                     }
@@ -276,8 +289,27 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
                 } else {
                     java.io.File(source).readText(Charsets.UTF_8)
                 }
-                Playlist.parse(raw)
             }
+        })
+        box.addView(row)
+        return box
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_PICK_PLAYLIST && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            Toast.makeText(this, "جارٍ قراءة الملف…", Toast.LENGTH_SHORT).show()
+            importStations {
+                contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+            }
+        }
+    }
+
+    /** Reads raw playlist text via [read] on a background thread, then merges. */
+    private fun importStations(read: () -> String) {
+        Thread {
+            val result = runCatching { Playlist.parse(read()) }
             runOnUiThread {
                 result.onSuccess { parsed ->
                     if (parsed.isEmpty()) {

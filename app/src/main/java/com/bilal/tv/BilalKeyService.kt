@@ -20,6 +20,7 @@ import com.bilal.tv.util.Prefs
 class BilalKeyService : AccessibilityService() {
 
     private val prefs by lazy { Prefs(this) }
+    private var lastRedDown = 0L
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
@@ -40,11 +41,30 @@ class BilalKeyService : AccessibilityService() {
             return true // swallow both down and up while learning
         }
 
+        // If a key was explicitly learned, a single press of it opens the panel.
         if (prefs.panelKey != -1 && code == prefs.panelKey) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) openPanel()
             return true
         }
+
+        // Default shortcut: double-press the RED button.
+        if (code == KeyEvent.KEYCODE_PROG_RED) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                val now = event.eventTime
+                if (now - lastRedDown in 1..DOUBLE_MS) {
+                    lastRedDown = 0
+                    openPanel()
+                } else {
+                    lastRedDown = now
+                }
+            }
+            return true // consume red so a stray single press does nothing
+        }
         return false
+    }
+
+    private companion object {
+        const val DOUBLE_MS = 700L
     }
 
     private fun openPanel() {
