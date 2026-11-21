@@ -96,6 +96,10 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         controls.addView(button("إيقاف") { service?.stopPlayback() })
         root.addView(controls)
 
+        root.addView(section("مصدر صوت الريسيفر"))
+        root.addView(button("تفعيل التقاط صوت الريسيفر (Shizuku)") { service?.enableReceiverCapture() })
+        root.addView(label("يحتاج تفعيل Shizuku مرة واحدة عبر ADB. بدونه يُستخدم الميكروفون (غير متوفر على أغلب الرسيفرات)."))
+
         root.addView(section("المحطات"))
         stationsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(stationsBox)

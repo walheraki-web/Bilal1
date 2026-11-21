@@ -10,7 +10,9 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.media3.common.util.UnstableApi
 import com.bilal.tv.audio.StationPlayer
+import com.bilal.tv.capture.InternalCaptureSource
 import com.bilal.tv.capture.MicTvAudioSource
+import com.bilal.tv.capture.ShizukuCapture
 import com.bilal.tv.capture.TvAudioSource
 import com.bilal.tv.receiver.ReceiverControl
 import com.bilal.tv.subs.SrtController
@@ -44,9 +46,33 @@ class BilalService : Service() {
     private val tvTrack = FeatureTrack()
     private val stationTrack = FeatureTrack()
 
-    /** Pluggable TV-audio source. Defaults to the microphone; set an internal
-     *  (ADB loop-back) source before [play] for the clean capture path. */
+    /** Pluggable TV-audio source. Defaults to the microphone; switches to
+     *  privileged internal capture once the user enables Shizuku. */
     var tvAudioSource: TvAudioSource = MicTvAudioSource()
+
+    /**
+     * Switches the TV-audio reference to privileged internal capture via Shizuku,
+     * so sync works on a receiver box with no microphone. Falls back to the mic
+     * if Shizuku is not available. Re-starts capture if a station is playing.
+     */
+    fun enableReceiverCapture() {
+        if (!ShizukuCapture.isAvailable()) {
+            status("Shizuku غير مُفعّل — فعّله مرة واحدة عبر ADB ثم أعد المحاولة")
+            return
+        }
+        ShizukuCapture.ensurePermission(
+            onReady = {
+                tvAudioSource = InternalCaptureSource(this) {
+                    ShizukuCapture.bindAndStart(this, onStatus = { status(it) }, onError = { status(it) })
+                }
+                status("تم تفعيل التقاط صوت الريسيفر — سيبدأ عند تشغيل محطة")
+                if (playing) startTvCapture()
+            },
+            onError = { status(it) },
+        )
+    }
+
+    val receiverCaptureActive get() = tvAudioSource is InternalCaptureSource
 
     private var subs: SrtController? = null
     private var overlay: SubtitleOverlay? = null
