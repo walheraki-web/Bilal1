@@ -41,6 +41,19 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <!-- Captures one remote key to open the panel over the live channel. -->
+        <service
+            android:name=".BilalKeyService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service" />
+        </service>
+
         <!-- Shizuku: grants shell-level privilege for internal audio capture. -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

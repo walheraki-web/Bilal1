@@ -49,6 +49,16 @@ class Prefs(context: Context) {
         get() = sp.getString("subtitleSource", null)
         set(v) = sp.edit().putString("subtitleSource", v).apply()
 
+    /** Remote key code that opens the panel over the live channel (-1 = none). */
+    var panelKey: Int
+        get() = sp.getInt("panelKey", -1)
+        set(v) = sp.edit().putInt("panelKey", v).apply()
+
+    /** When true, the accessibility service captures the next key as the panel key. */
+    var learnPanelKey: Boolean
+        get() = sp.getBoolean("learnPanelKey", false)
+        set(v) = sp.edit().putBoolean("learnPanelKey", v).apply()
+
     var lastStationUrl: String?
         get() = sp.getString("lastStationUrl", null)
         set(v) = sp.edit().putString("lastStationUrl", v).apply()

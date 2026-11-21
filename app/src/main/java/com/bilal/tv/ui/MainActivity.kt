@@ -135,6 +135,18 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         refreshStations()
         panel.addView(addStationRow())
 
+        panel.addView(section("زر فتح اللوحة على الريموت"))
+        panel.addView(button("تفعيل خدمة الزر (إمكانية الوصول)") {
+            runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                .onFailure { Toast.makeText(this, "افتح: الإعدادات ▸ إمكانية الوصول ▸ Bilal", Toast.LENGTH_LONG).show() }
+        })
+        panel.addView(button("تعليم الزر: اضغط بعدها الزر على الريموت") {
+            prefs.learnPanelKey = true
+            val cur = if (prefs.panelKey != -1) " (الحالي: ${prefs.panelKey})" else ""
+            Toast.makeText(this, "اضغط الآن الزر الذي تريده لفتح اللوحة$cur", Toast.LENGTH_LONG).show()
+        })
+        panel.addView(label("فعّل الخدمة مرة واحدة، ثم «تعليم الزر» واضغط أي زر فارغ على الريموت (مثل الزر الأحمر). بعدها يفتح اللوحة فوق القناة."))
+
         panel.addView(section("مصدر صوت الريسيفر"))
         panel.addView(button("تفعيل التقاط صوت الريسيفر (Shizuku)") { service?.enableReceiverCapture() })
 
