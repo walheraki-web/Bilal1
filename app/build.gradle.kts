@@ -13,10 +13,6 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
-        ndk {
-            // Typical Android TV receivers are ARM; keeps the Vosk native libs small.
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
-        }
     }
 
     buildTypes {
@@ -47,12 +43,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-exoplayer-hls:$media3")
 
-    // On-device translation to Arabic
-    implementation("com.google.mlkit:translate:17.0.3")
-
-    // On-device speech recognition (models are downloaded at runtime)
-    implementation("com.alphacephei:vosk-android:0.3.47")
-    implementation("net.java.dev.jna:jna:5.13.0@aar")
+    // Subtitles are plain SRT files shown in sync — no Google Play Services,
+    // no speech recognition, no cloud translation. Works on AOSP Amlogic boxes.
 
     testImplementation("junit:junit:4.13.2")
 }

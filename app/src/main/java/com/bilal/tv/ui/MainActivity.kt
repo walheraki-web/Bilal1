@@ -94,14 +94,6 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         controls.addView(button("مزامنة الآن") { service?.sync() })
         controls.addView(button("إيقاف") { service?.stopPlayback() })
-        val subBtn = button("ترجمة الفيلم: متوقفة") {}
-        subBtn.setOnClickListener {
-            val svc = service ?: return@setOnClickListener
-            val on = !svc.subtitlesOn
-            svc.setSubtitlesEnabled(on)
-            (it as Button).text = if (on) "ترجمة الفيلم: تعمل" else "ترجمة الفيلم: متوقفة"
-        }
-        controls.addView(subBtn)
         root.addView(controls)
 
         root.addView(section("المحطات"))
@@ -116,8 +108,8 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         root.addView(check("كتم صوت القناة بعد المزامنة", prefs.muteTvAfterSync) { prefs.muteTvAfterSync = it })
         root.addView(check("التحكم بتأخير الصورة في الريسيفر", prefs.controlVideoDelay) { prefs.controlVideoDelay = it })
 
-        root.addView(section("لغة صوت الأفلام (للترجمة)"))
-        root.addView(langRow())
+        root.addView(section("ترجمة الفيلم (ملف SRT)"))
+        root.addView(subtitleRows())
 
         root.addView(button("تصدير السجل إلى التنزيلات") {
             runCatching { Toast.makeText(this, "حُفظ: ${BLog.export(this)}", Toast.LENGTH_LONG).show() }
@@ -168,23 +160,34 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         return row
     }
 
-    private fun langRow(): View {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        for ((code, name) in listOf("en" to "إنجليزي", "fr" to "فرنسي", "es" to "إسباني", "tr" to "تركي")) {
-            val b = button(name) { prefs.subtitleLang = code; markLang(row, code) }
-            row.addView(b)
-        }
-        markLang(row, prefs.subtitleLang)
-        return row
-    }
+    private fun subtitleRows(): View {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
-    private fun markLang(row: LinearLayout, code: String) {
-        val order = listOf("en", "fr", "es", "tr")
-        for (i in 0 until row.childCount) {
-            (row.getChildAt(i) as Button).setBackgroundColor(
-                if (order.getOrNull(i) == code) Color.parseColor("#2BB673") else Color.parseColor("#1C2C27"),
-            )
+        val loadRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val srtUrl = EditText(this).apply {
+            hint = "رابط ملف SRT، أو مسار ملف على الجهاز"
+            setText(prefs.subtitleSource ?: "")
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f)
         }
+        loadRow.addView(srtUrl)
+        loadRow.addView(button("تحميل") {
+            val src = srtUrl.text.toString().trim()
+            if (src.isNotEmpty()) { prefs.subtitleSource = src; service?.loadSubtitles(src) }
+        })
+        box.addView(loadRow)
+
+        val playRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        playRow.addView(button("ابدأ الترجمة") { service?.startSubtitles(0) })
+        playRow.addView(button("أوقف") { service?.stopSubtitles() })
+        playRow.addView(button("−٥ث") { service?.nudgeSubtitles(-5000) })
+        playRow.addView(button("−٠٫٥") { service?.nudgeSubtitles(-500) })
+        playRow.addView(button("+٠٫٥") { service?.nudgeSubtitles(500) })
+        playRow.addView(button("+٥ث") { service?.nudgeSubtitles(5000) })
+        box.addView(playRow)
+
+        box.addView(label("حمّل ملف SRT، شغّل الفيلم، ثم اضغط «ابدأ الترجمة» عند بدايته. اضبط التأخير بأزرار الإزاحة حتى تتطابق."))
+        return box
     }
 
     // --- service callbacks ---
@@ -194,7 +197,6 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         result.text = text
         prefs.sp.edit().putString("lastSyncResult", text).apply()
     }
-    override fun onSubtitle(text: String, isFinal: Boolean) {}
 
     private fun refreshResult() = runOnUiThread { result.text = service?.lastResult ?: result.text }
 

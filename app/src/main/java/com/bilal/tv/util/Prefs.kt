@@ -44,6 +44,11 @@ class Prefs(context: Context) {
         get() = sp.getString("subtitleLang", "en")!!
         set(v) = sp.edit().putString("subtitleLang", v).apply()
 
+    /** Last SRT source (URL or local path). */
+    var subtitleSource: String?
+        get() = sp.getString("subtitleSource", null)
+        set(v) = sp.edit().putString("subtitleSource", v).apply()
+
     var lastStationUrl: String?
         get() = sp.getString("lastStationUrl", null)
         set(v) = sp.edit().putString("lastStationUrl", v).apply()

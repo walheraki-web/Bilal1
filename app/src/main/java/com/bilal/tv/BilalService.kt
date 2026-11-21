@@ -13,7 +13,7 @@ import com.bilal.tv.audio.StationPlayer
 import com.bilal.tv.capture.MicTvAudioSource
 import com.bilal.tv.capture.TvAudioSource
 import com.bilal.tv.receiver.ReceiverControl
-import com.bilal.tv.subs.SubtitleEngine
+import com.bilal.tv.subs.SrtController
 import com.bilal.tv.subs.SubtitleOverlay
 import com.bilal.tv.sync.FeatureTrack
 import com.bilal.tv.sync.SyncCoordinator
@@ -48,7 +48,7 @@ class BilalService : Service() {
      *  (ADB loop-back) source before [play] for the clean capture path. */
     var tvAudioSource: TvAudioSource = MicTvAudioSource()
 
-    private var subtitles: SubtitleEngine? = null
+    private var subs: SrtController? = null
     private var overlay: SubtitleOverlay? = null
 
     @Volatile var currentStation: Station? = null; private set
@@ -61,7 +61,6 @@ class BilalService : Service() {
     interface Listener {
         fun onStatus(text: String) {}
         fun onResult(text: String) {}
-        fun onSubtitle(text: String, isFinal: Boolean) {}
     }
 
     private var syncJob: SyncCoordinator? = null
@@ -124,7 +123,6 @@ class BilalService : Service() {
         runCatching {
             tvAudioSource.start { pcm, count, ch, rate, t ->
                 tvTrack.push(pcm, count, ch, rate, t.toDouble())
-                subtitles?.onBlock(pcm, count, ch, rate, t)
             }
             status("مصدر صوت القناة: ${tvAudioSource.label}")
         }.onFailure {
@@ -179,28 +177,28 @@ class BilalService : Service() {
 
     // --- subtitles ---
 
-    fun setSubtitlesEnabled(enabled: Boolean) {
-        if (enabled) {
-            if (subtitles != null) return
-            val src = prefs.subtitleLang
-            val ov = SubtitleOverlay(this).also { it.show() }
-            overlay = ov
-            subtitles = SubtitleEngine(
-                context = this,
-                sourceLang = src,
-                onSubtitle = { text, isFinal ->
-                    ov.set(text, isFinal)
-                    listener?.onSubtitle(text, isFinal)
-                },
-                onStatus = { status(it) },
-            ).also { it.start() }
-        } else {
-            subtitles?.stop(); subtitles = null
-            overlay?.hide(); overlay = null
-        }
+    private fun ensureSubtitles(): SrtController {
+        subs?.let { return it }
+        val ov = SubtitleOverlay(this)
+        overlay = ov
+        return SrtController(this, ov, onStatus = { status(it) }).also { subs = it }
     }
 
-    val subtitlesOn get() = subtitles != null
+    /** Load an SRT file (local path or http[s] URL). */
+    fun loadSubtitles(source: String) {
+        ensureSubtitles().load(source) { }
+    }
+
+    /** Start subtitles, treating now as movie time [atMs]. */
+    fun startSubtitles(atMs: Long = 0) = ensureSubtitles().start(atMs)
+
+    fun stopSubtitles() = subs?.stop()
+
+    /** Nudge timing by [deltaMs] (negative = show earlier). */
+    fun nudgeSubtitles(deltaMs: Long) = ensureSubtitles().nudge(deltaMs)
+
+    val subtitlesLoaded get() = subs?.loaded == true
+    val subtitlesRunning get() = subs?.isRunning == true
 
     // --- helpers ---
 
@@ -235,7 +233,7 @@ class BilalService : Service() {
 
     override fun onDestroy() {
         stopPlayback()
-        setSubtitlesEnabled(false)
+        subs?.release(); subs = null
         if (playerReady) runCatching { player.release() }
         super.onDestroy()
     }

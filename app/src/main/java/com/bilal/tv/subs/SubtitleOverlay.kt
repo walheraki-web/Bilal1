@@ -57,18 +57,24 @@ class SubtitleOverlay(private val context: Context) {
         }
     }
 
-    fun set(text: String, isFinal: Boolean) {
+    /** Show [text] and keep it until the next set/clear (SRT cue window). */
+    fun setPersistent(text: String) {
         main.post {
             val tv = view ?: return@post
-            tv.text = text
-            tv.visibility = View.VISIBLE
             clearRunnable?.let { main.removeCallbacks(it) }
-            if (isFinal) {
-                val r = Runnable { tv.visibility = View.GONE }
-                clearRunnable = r
-                // Keep final lines readable ~ one second per 8 chars, 2.5–7 s.
-                main.postDelayed(r, (text.length * 120L).coerceIn(2500, 7000))
+            if (tv.text?.toString() != text || tv.visibility != View.VISIBLE) {
+                tv.text = text
+                tv.visibility = View.VISIBLE
             }
+        }
+    }
+
+    /** Hide the current line but keep the overlay attached. */
+    fun clear() {
+        main.post {
+            val tv = view ?: return@post
+            clearRunnable?.let { main.removeCallbacks(it) }
+            tv.visibility = View.GONE
         }
     }
 
