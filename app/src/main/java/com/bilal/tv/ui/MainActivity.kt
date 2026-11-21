@@ -14,6 +14,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -42,6 +43,7 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         override fun onServiceConnected(name: ComponentName?, b: IBinder?) {
             service = (b as BilalService.LocalBinder).service.also { it.listener = this@MainActivity }
             refreshResult()
+            refreshValues()
         }
         override fun onServiceDisconnected(name: ComponentName?) { service = null }
     }
@@ -79,53 +81,111 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
     // --- UI ---
 
     private fun buildUi(): View {
-        val root = LinearLayout(this).apply {
+        // Transparent frame; the live TV video plane shows through the left side.
+        val frame = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
+
+        val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 32, 40, 32)
-            setBackgroundColor(Color.parseColor("#0E1A17"))
+            setPadding(36, 28, 36, 28)
+            // Semi-transparent so the panel reads over live video, like ZHE.
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.parseColor("#E60E1A17"))
+                cornerRadius = 18f
+            }
         }
+
         val version = runCatching {
             packageManager.getPackageInfo(packageName, 0).versionName
         }.getOrNull() ?: "?"
-        root.addView(title("Bilal — $version"))
+        panel.addView(title("Bilal — $version"))
 
-        status = label("—")
         result = label(prefs.sp.getString("lastSyncResult", "لم تُجرَ مزامنة بعد")!!)
-        root.addView(result)
-        root.addView(status)
+        status = label("—")
+        panel.addView(result)
+        panel.addView(status)
 
         val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         controls.addView(button("مزامنة الآن") { service?.sync() })
         controls.addView(button("إيقاف") { service?.stopPlayback() })
-        root.addView(controls)
+        panel.addView(controls)
 
-        root.addView(section("مصدر صوت الريسيفر"))
-        root.addView(button("تفعيل التقاط صوت الريسيفر (Shizuku)") { service?.enableReceiverCapture() })
-        root.addView(label("يحتاج تفعيل Shizuku مرة واحدة عبر ADB. بدونه يُستخدم الميكروفون (غير متوفر على أغلب الرسيفرات)."))
+        // المسموع الآن: صوت القناة / الصوتية
+        panel.addView(button("المسموع: بدّل بين القناة والصوتية") {
+            service?.toggleMuteTv(); refreshValues()
+        })
 
-        root.addView(section("المحطات"))
+        // تأخير الصورة / تأخير الصوت — exactly the ZHE controls
+        videoDelayRow = delayRow("تأخير الصورة", { service?.videoDelayMs ?: 0 },
+            onMinus = { service?.nudgeVideoDelay(-500); refreshValues() },
+            onPlus = { service?.nudgeVideoDelay(+500); refreshValues() })
+        panel.addView(videoDelayRow!!.view)
+
+        audioDelayRow = delayRow("تأخير الصوت", { service?.audioDelayMs ?: 0 },
+            onMinus = { service?.nudgeAudioDelay(-250); refreshValues() },
+            onPlus = { service?.nudgeAudioDelay(+250); refreshValues() })
+        panel.addView(audioDelayRow!!.view)
+
+        panel.addView(check("المزامنة التلقائية بعد الانقطاع", prefs.resyncAfterDrop) {
+            service?.autoResync = it
+        })
+
+        panel.addView(section("المحطة (قناة الصوت)"))
         stationsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(stationsBox)
+        panel.addView(stationsBox)
         refreshStations()
-        root.addView(addStationRow())
+        panel.addView(addStationRow())
 
-        root.addView(section("خيارات الاستمرارية"))
-        root.addView(check("إعادة المزامنة تلقائيًا بعد انقطاع البث", prefs.resyncAfterDrop) { prefs.resyncAfterDrop = it })
-        root.addView(check("إعادة المزامنة عند تغيير القناة", prefs.resyncOnChannel) { prefs.resyncOnChannel = it })
-        root.addView(check("كتم صوت القناة بعد المزامنة", prefs.muteTvAfterSync) { prefs.muteTvAfterSync = it })
-        root.addView(check("التحكم بتأخير الصورة في الريسيفر", prefs.controlVideoDelay) { prefs.controlVideoDelay = it })
+        panel.addView(section("مصدر صوت الريسيفر"))
+        panel.addView(button("تفعيل التقاط صوت الريسيفر (Shizuku)") { service?.enableReceiverCapture() })
 
-        root.addView(section("ترجمة الفيلم (ملف SRT)"))
-        root.addView(subtitleRows())
+        panel.addView(section("ترجمة الفيلم (ملف SRT)"))
+        panel.addView(subtitleRows())
 
-        root.addView(button("تصدير السجل إلى التنزيلات") {
+        panel.addView(button("تصدير السجل") {
             runCatching { Toast.makeText(this, "حُفظ: ${BLog.export(this)}", Toast.LENGTH_LONG).show() }
                 .onFailure { Toast.makeText(this, "تعذّر الحفظ: ${it.message}", Toast.LENGTH_LONG).show() }
         })
 
-        val scroll = ScrollView(this)
-        scroll.addView(root)
-        return scroll
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
+            addView(panel)
+        }
+        // Panel pinned to the right, ~48% width, full height — live video at left.
+        val lp = FrameLayout.LayoutParams(
+            (resources.displayMetrics.widthPixels * 0.50f).toInt(),
+            FrameLayout.LayoutParams.MATCH_PARENT,
+        ).apply { gravity = Gravity.END }
+        frame.addView(scroll, lp)
+        return frame
+    }
+
+    private class DelayRow(val view: View, val value: TextView, val read: () -> Int)
+    private var videoDelayRow: DelayRow? = null
+    private var audioDelayRow: DelayRow? = null
+
+    private fun delayRow(label: String, read: () -> Int, onMinus: () -> Unit, onPlus: () -> Unit): DelayRow {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val name = TextView(this).apply {
+            text = label; setTextColor(Color.WHITE); textSize = 16f
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val value = TextView(this).apply {
+            text = "0.0 ث"; setTextColor(Color.parseColor("#8CF2C2")); textSize = 17f
+            gravity = Gravity.CENTER; minWidth = 160
+        }
+        row.addView(name)
+        row.addView(button("−") { onMinus() })
+        row.addView(value)
+        row.addView(button("+") { onPlus() })
+        return DelayRow(row, value, read)
+    }
+
+    private fun refreshValues() = runOnUiThread {
+        videoDelayRow?.let { it.value.text = "${it.read() / 1000.0} ث" }
+        audioDelayRow?.let { it.value.text = "${it.read() / 1000.0} ث" }
     }
 
     private fun refreshStations() {

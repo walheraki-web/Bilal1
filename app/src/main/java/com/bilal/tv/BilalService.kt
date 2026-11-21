@@ -19,6 +19,7 @@ import com.bilal.tv.subs.SrtController
 import com.bilal.tv.subs.SubtitleOverlay
 import com.bilal.tv.sync.FeatureTrack
 import com.bilal.tv.sync.SyncCoordinator
+import com.bilal.tv.sync.SyncPolicy
 import com.bilal.tv.util.BLog
 import com.bilal.tv.util.Prefs
 import com.bilal.tv.util.Station
@@ -192,6 +193,43 @@ class BilalService : Service() {
         syncJob?.cancel(); syncJob = null; syncing = false
         if (playerReady) player.setTapping(false)
         status("أُلغيت المزامنة")
+    }
+
+    // --- manual delay / mute controls (the ZHE-style panel) ---
+
+    val videoDelayMs get() = prefs.videoDelayMs
+    val audioDelayMs get() = if (playerReady) player.audioDelayMs else 0
+    val tvMuted get() = receiver.tvMuted
+    var autoResync: Boolean
+        get() = prefs.resyncAfterDrop
+        set(v) { prefs.resyncAfterDrop = v; status(if (v) "المزامنة التلقائية مفعّلة" else "المزامنة التلقائية مطفأة") }
+
+    /** Step the receiver picture delay by [deltaMs] (snapped to 500 ms, 0..60 s). */
+    fun nudgeVideoDelay(deltaMs: Int) {
+        if (!prefs.controlVideoDelay) { status("التحكم بتأخير الصورة مُعطّل في الخيارات"); return }
+        val snapped = ((prefs.videoDelayMs + deltaMs) / 500 * 500).coerceIn(0, SyncPolicy.VIDEO_MAX_MS)
+        runCatching { receiver.setVideoDelay(snapped) }
+            .onFailure { status("تعذّر ضبط تأخير الصورة: ${it.message}"); return }
+        prefs.videoDelayMs = snapped
+        status("تأخير الصورة: ${snapped / 1000.0} ث")
+    }
+
+    /** Step the station audio delay by [deltaMs] (0..120 s). */
+    fun nudgeAudioDelay(deltaMs: Int) {
+        if (!playerReady) { status("المشغّل غير جاهز"); return }
+        val next = (player.audioDelayMs + deltaMs).coerceIn(0, SyncPolicy.AUDIO_MAX_MS)
+        player.audioDelayMs = next
+        currentStation?.let { prefs.setStationDelay(it.url, next) }
+        status("تأخير الصوت: ${next / 1000.0} ث")
+    }
+
+    /** Toggle whether the live channel's own sound is muted. */
+    fun toggleMuteTv(): Boolean {
+        val mute = !receiver.tvMuted
+        runCatching { receiver.muteTv(mute) }
+            .onFailure { status("تعذّر كتم القناة: ${it.message}") }
+        status(if (receiver.tvMuted) "المسموع الآن: الصوتية (القناة مكتومة)" else "المسموع الآن: صوت القناة")
+        return receiver.tvMuted
     }
 
     private fun onStreamRecovered() {
