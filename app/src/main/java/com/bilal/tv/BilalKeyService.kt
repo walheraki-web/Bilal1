@@ -2,57 +2,68 @@ package com.bilal.tv
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import com.bilal.tv.ui.MainActivity
-import com.bilal.tv.util.BLog
 import com.bilal.tv.util.Prefs
+import kotlin.concurrent.thread
 
 /**
- * Captures one remote key to open Bilal's panel over the live channel — the same
- * mechanism the reference app uses. The user enables this accessibility service
- * once, then "teaches" Bilal which button to use (learn mode): the next key
- * pressed becomes the panel key.
+ * Opens Bilal's panel over the live channel from the remote: a double-press of
+ * the RED button, or a single press of a key the user "teaches" it.
  *
- * Only the chosen key is consumed; every other key passes through untouched, so
- * normal remote navigation of the TV is unaffected.
+ * onKeyEvent runs on the input-dispatch path, so it must return almost instantly
+ * and never touch disk — otherwise the box's input system stalls (a ~10 s hang).
+ * All config is kept in volatile fields in [Config]; disk I/O happens only off
+ * this path.
  */
 class BilalKeyService : AccessibilityService() {
 
-    private val prefs by lazy { Prefs(this) }
+    /** In-memory config shared with the UI (same process); no disk I/O on the key path. */
+    object Config {
+        @Volatile var panelKey: Int = -1
+        @Volatile var learnMode: Boolean = false
+
+        fun loadFrom(prefs: Prefs) { panelKey = prefs.panelKey }
+        fun startLearn() { learnMode = true }
+    }
+
+    private val main = Handler(Looper.getMainLooper())
     private var lastRedDown = 0L
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        runCatching { Config.loadFrom(Prefs(this)) }
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        // Fast path only: volatile reads, no disk, no logging, never consume.
+        if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return false
         val code = event.keyCode
-        // Never hijack the essential navigation keys.
-        if (code == KeyEvent.KEYCODE_HOME || code == KeyEvent.KEYCODE_POWER) return false
 
-        if (prefs.learnPanelKey) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
-                code != KeyEvent.KEYCODE_BACK
+        if (Config.learnMode) {
+            if (code != KeyEvent.KEYCODE_BACK && code != KeyEvent.KEYCODE_HOME &&
+                code != KeyEvent.KEYCODE_POWER
             ) {
-                prefs.panelKey = code
-                prefs.learnPanelKey = false
-                BLog.i("panel key learned: $code")
+                Config.panelKey = code
+                Config.learnMode = false
+                persistPanelKey(code)
             }
-            return false // never block the key, even while learning
-        }
-
-        // If a key was explicitly learned, a single press of it opens the panel.
-        // We do NOT consume it (returning true can stall this box's input), we
-        // just open the panel as a side effect.
-        if (prefs.panelKey != -1 && code == prefs.panelKey) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) openPanel()
             return false
         }
 
-        // Default shortcut: double-press the RED button. Never consumed.
-        if (code == KeyEvent.KEYCODE_PROG_RED &&
-            event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0
-        ) {
+        val learned = Config.panelKey
+        if (learned != -1 && code == learned) {
+            openPanel()
+            return false
+        }
+
+        if (code == KeyEvent.KEYCODE_PROG_RED) {
             val now = event.eventTime
             if (now - lastRedDown in 1..DOUBLE_MS) {
                 lastRedDown = 0
@@ -64,17 +75,23 @@ class BilalKeyService : AccessibilityService() {
         return false
     }
 
-    private companion object {
-        const val DOUBLE_MS = 700L
+    private fun persistPanelKey(code: Int) {
+        thread(isDaemon = true) { runCatching { Prefs(this@BilalKeyService).panelKey = code } }
     }
 
     private fun openPanel() {
-        runCatching {
-            startActivity(
-                Intent(this, MainActivity::class.java).addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
-                ),
-            )
-        }.onFailure { BLog.e("open panel", it) }
+        main.post {
+            runCatching {
+                startActivity(
+                    Intent(this, MainActivity::class.java).addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
+                    ),
+                )
+            }
+        }
+    }
+
+    private companion object {
+        const val DOUBLE_MS = 700L
     }
 }

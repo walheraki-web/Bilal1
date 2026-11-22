@@ -57,6 +57,7 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
         BLog.init(this)
+        com.bilal.tv.BilalKeyService.Config.loadFrom(prefs)
         setContentView(buildUi())
         requestRuntimePermissions()
         ensureOverlayPermission()
@@ -134,34 +135,27 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
             service?.autoResync = it
         })
 
-        panel.addView(section("المحطة (قناة الصوت)"))
+        // Station picker is created here but attached LAST (it can be long after
+        // a CFG import), so the controls above stay reachable without scrolling
+        // past dozens of stations.
         stationsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        // Cap the (possibly long) station list to its own scroll area so the rest
-        // of the panel stays reachable with the remote.
-        val stationsScroll = ScrollView(this).apply {
-            isFocusable = false
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                (resources.displayMetrics.density * 200).toInt(),
-            )
-            addView(stationsBox)
-        }
-        panel.addView(stationsScroll)
         refreshStations()
-        panel.addView(addStationRow())
-        panel.addView(importRow())
 
         panel.addView(section("زر فتح اللوحة على الريموت"))
         panel.addView(button("تفعيل خدمة الزر (إمكانية الوصول)") {
             runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
                 .onFailure { Toast.makeText(this, "افتح: الإعدادات ▸ إمكانية الوصول ▸ Bilal", Toast.LENGTH_LONG).show() }
         })
-        panel.addView(button("تعليم الزر: اضغط بعدها الزر على الريموت") {
-            prefs.learnPanelKey = true
-            val cur = if (prefs.panelKey != -1) " (الحالي: ${prefs.panelKey})" else ""
-            Toast.makeText(this, "اضغط الآن الزر الذي تريده لفتح اللوحة$cur", Toast.LENGTH_LONG).show()
+        panel.addView(button("تعليم زر آخر: اضغط بعدها الزر على الريموت") {
+            com.bilal.tv.BilalKeyService.Config.startLearn()
+            Toast.makeText(this, "اضغط الآن الزر الذي تريده لفتح اللوحة", Toast.LENGTH_LONG).show()
         })
-        panel.addView(label("فعّل الخدمة مرة واحدة، ثم «تعليم الزر» واضغط أي زر فارغ على الريموت (مثل الزر الأحمر). بعدها يفتح اللوحة فوق القناة."))
+        panel.addView(button("إلغاء الزر المتعلَّم (العودة للأحمر مرتين)") {
+            prefs.panelKey = -1
+            com.bilal.tv.BilalKeyService.Config.panelKey = -1
+            Toast.makeText(this, "الاختصار الآن: الزر الأحمر مرتين", Toast.LENGTH_SHORT).show()
+        })
+        panel.addView(label("الافتراضي: الزر الأحمر مرتين سريعًا يفتح اللوحة فوق القناة. فعّل خدمة الزر أولًا."))
 
         panel.addView(section("مصدر صوت الريسيفر"))
         panel.addView(button("التقاط مباشر (بلا Shizuku)") { service?.enableDirectReceiverCapture() })
@@ -175,6 +169,12 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
             runCatching { Toast.makeText(this, "حُفظ: ${BLog.export(this)}", Toast.LENGTH_LONG).show() }
                 .onFailure { Toast.makeText(this, "تعذّر الحفظ: ${it.message}", Toast.LENGTH_LONG).show() }
         })
+
+        // Station list last — longest section after a CFG import.
+        panel.addView(section("المحطة (قناة الصوت) — اختر واحدة"))
+        panel.addView(addStationRow())
+        panel.addView(importRow())
+        panel.addView(stationsBox)
 
         val scroll = ScrollView(this).apply {
             isFillViewport = false
