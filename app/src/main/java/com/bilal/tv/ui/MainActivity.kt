@@ -174,6 +174,7 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         panel.addView(section("المحطة (قناة الصوت) — اختر واحدة"))
         panel.addView(addStationRow())
         panel.addView(importRow())
+        panel.addView(searchRow())
         panel.addView(stationsBox)
 
         val scroll = ScrollView(this).apply {
@@ -218,11 +219,49 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         audioDelayRow?.let { it.value.text = "${it.read() / 1000.0} ث" }
     }
 
+    private var stationFilter: String = ""
+
+    // Filter the (often long, imported-from-cfg) station list by name, so the
+    // commentary station for the match on screen is quick to find.
+    private fun searchRow(): View {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val q = EditText(this).apply {
+            hint = "ابحث عن محطة التعليق بالاسم…"
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#80FFFFFF"))
+            setText(stationFilter)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    stationFilter = s?.toString() ?: ""
+                    refreshStations()
+                }
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            })
+        }
+        row.addView(q)
+        row.addView(button("مسح") {
+            stationFilter = ""
+            q.setText("")
+            refreshStations()
+        })
+        return row
+    }
+
     private fun refreshStations() {
         stationsBox.removeAllViews()
-        val stations = prefs.stations
+        val all = prefs.stations
+        if (all.isEmpty()) {
+            stationsBox.addView(label("لا توجد محطات بعد. أضف محطة برابط بثّ أو استورد ملف cfg/m3u من الأسفل."))
+            return
+        }
+        val q = stationFilter.trim()
+        val stations = if (q.isEmpty()) all
+            else all.filter { it.name.contains(q, ignoreCase = true) }
+        stationsBox.addView(label("المحطات: ${stations.size} / ${all.size}"))
         if (stations.isEmpty()) {
-            stationsBox.addView(label("لا توجد محطات بعد. أضف محطة برابط بثّ (m3u8 أو mp3) من الأسفل."))
+            stationsBox.addView(label("لا توجد محطة باسم يطابق «$q». امسح البحث لعرض الكل."))
             return
         }
         for (s in stations) {
