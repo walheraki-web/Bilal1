@@ -378,6 +378,7 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#80FFFFFF"))
             setText(stationFilter)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun afterTextChanged(s: android.text.Editable?) {
@@ -388,6 +389,7 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
                 override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             })
         }
+        forceIme(q)
         row.addView(q)
         row.addView(button("مسح") {
             stationFilter = ""
@@ -628,6 +630,20 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         cornerRadius = 14f
         setColor(Color.parseColor(if (focused) "#2BB673" else "#1C2C27"))
         setStroke(if (focused) 5 else 3, Color.parseColor(if (focused) "#8CF2C2" else "#2BB673"))
+    }
+
+    /** Force the on-screen keyboard to appear for an EditText on a TV box, where
+     *  clicking a focused field inside a translucent window often won't open it. */
+    private fun forceIme(e: EditText) {
+        e.isFocusableInTouchMode = true
+        e.setShowSoftInputOnFocus(true)
+        val show = {
+            e.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.showSoftInput(e, android.view.inputmethod.InputMethodManager.SHOW_FORCED)
+        }
+        e.setOnClickListener { show() }
+        e.setOnFocusChangeListener { _, has -> if (has) e.post { show() } }
     }
 
     private fun button(t: String, onClick: (View) -> Unit) = Button(this).apply {
