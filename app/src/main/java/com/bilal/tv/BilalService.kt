@@ -311,6 +311,16 @@ class BilalService : Service() {
         )
     }
 
+    /** No-privilege local probe for the current channel (getprop + settings). */
+    fun detectCurrentChannelLocal(onResult: (String) -> Unit) {
+        Thread {
+            val out = runCatching { com.bilal.tv.util.ChannelProbe.run() }
+                .getOrElse { "تعذّر الفحص المحلي: ${it.message}" }
+            BLog.i("local channel probe:\n$out")
+            main.post { onResult(out) }
+        }.also { it.isDaemon = true }.start()
+    }
+
     /** Current programme title on a TV channel (by EPG id), if the guide is loaded. */
     fun currentProgramme(epgId: String): String? =
         Epg.currentTitle(epg, epgId, System.currentTimeMillis())

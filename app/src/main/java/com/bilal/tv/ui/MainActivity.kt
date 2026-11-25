@@ -260,14 +260,15 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
             }.onFailure { Toast.makeText(this, "تعذّر فتح الملفات: ${it.message}", Toast.LENGTH_LONG).show() }
         })
 
-        box.addView(button("اكتشاف القناة المفتوحة تلقائيًا (Shizuku)") {
-            Toast.makeText(this, "جارٍ فحص الجهاز…", Toast.LENGTH_SHORT).show()
-            service?.detectCurrentChannel { out ->
-                epgTitle?.text = out.take(1500)
-                BLog.i("channel detect:\n$out")
-            }
+        box.addView(button("اكتشاف محلي للقناة (بلا Shizuku) — جرّبه أولًا") {
+            Toast.makeText(this, "جارٍ الفحص المحلي…", Toast.LENGTH_SHORT).show()
+            service?.detectCurrentChannelLocal { out -> epgTitle?.text = out.take(1800) }
         })
-        box.addView(label("القراءة التلقائية للقناة تحتاج تفعيل Shizuku. سيعرض الفحص ما يكشفه الصندوق عن القناة الحالية لنربطه تلقائيًا."))
+        box.addView(button("اكتشاف القناة المفتوحة (Shizuku)") {
+            Toast.makeText(this, "جارٍ فحص الجهاز…", Toast.LENGTH_SHORT).show()
+            service?.detectCurrentChannel { out -> epgTitle?.text = out.take(1800) }
+        })
+        box.addView(label("جرّب «الاكتشاف المحلي» أولًا — لا يحتاج صلاحيات. صدّر السجل وأرسله لي لأبني الربط التلقائي بين القناة والمعلّق."))
 
         epgTitle = label("—")
         box.addView(epgTitle!!)
