@@ -260,6 +260,15 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
             }.onFailure { Toast.makeText(this, "تعذّر فتح الملفات: ${it.message}", Toast.LENGTH_LONG).show() }
         })
 
+        box.addView(button("اكتشاف القناة المفتوحة تلقائيًا (Shizuku)") {
+            Toast.makeText(this, "جارٍ فحص الجهاز…", Toast.LENGTH_SHORT).show()
+            service?.detectCurrentChannel { out ->
+                epgTitle?.text = out.take(1500)
+                BLog.i("channel detect:\n$out")
+            }
+        })
+        box.addView(label("القراءة التلقائية للقناة تحتاج تفعيل Shizuku. سيعرض الفحص ما يكشفه الصندوق عن القناة الحالية لنربطه تلقائيًا."))
+
         epgTitle = label("—")
         box.addView(epgTitle!!)
         box.addView(channelsBox)
@@ -273,19 +282,36 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         val title = service?.currentProgramme(ch.epgId)
         epgTitle?.text = if (title != null) "الآن على ${ch.name}: $title" else "الآن على ${ch.name}: (لا دليل)"
 
-        val linkedUrl = prefs.channelLink(ch.epgId)
-        val linked = linkedUrl?.let { url -> prefs.stations.firstOrNull { it.url == url } }
-        if (linked != null) {
-            service?.playAndMute(linked)
-            Toast.makeText(this, "تشغيل ${linked.name} وكتم صوت القناة", Toast.LENGTH_SHORT).show()
-        } else {
-            // No saved link: seed the station search with the programme title so the
-            // matching commentary station is easy to find and link.
-            stationFilter = title?.let { keywordsOf(it) } ?: ""
-            refreshStations()
-            Toast.makeText(this, "اختر محطة التعليق ثم اضغط «ربط بهذه القناة»", Toast.LENGTH_LONG).show()
+        val linkedUrls = prefs.channelLinks(ch.epgId)
+        val linked = prefs.stations.filter { it.url in linkedUrls }
+        when {
+            linked.size == 1 -> {
+                service?.playAndMute(linked[0])
+                Toast.makeText(this, "تشغيل ${linked[0].name} وكتم صوت القناة", Toast.LENGTH_SHORT).show()
+            }
+            linked.size > 1 -> chooseCommentator(ch, linked)
+            else -> {
+                // No saved link: seed the station search with the programme title so
+                // the matching commentary station is easy to find and link.
+                stationFilter = title?.let { keywordsOf(it) } ?: ""
+                refreshStations()
+                Toast.makeText(this, "اختر محطة التعليق ثم اضغط «ربط بهذه القناة»", Toast.LENGTH_LONG).show()
+            }
         }
         refreshChannels()
+    }
+
+    /** Several commentators linked to one channel: let the user pick which to hear. */
+    private fun chooseCommentator(ch: TvChannel, options: List<Station>) {
+        val names = options.map { it.name }.toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("اختر المعلّق لـ ${ch.name}")
+            .setItems(names) { _, i ->
+                service?.playAndMute(options[i])
+                Toast.makeText(this, "تشغيل ${options[i].name} وكتم صوت القناة", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("إلغاء", null)
+            .show()
     }
 
     /** A short search seed from a programme title (longest word, no digits/symbols). */
@@ -306,26 +332,39 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
         for (ch in channels) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             val mark = if (ch.epgId == watching) "● " else ""
-            val linked = prefs.channelLink(ch.epgId) != null
-            val suffix = if (linked) " 🔊" else ""
+            val count = prefs.channelLinks(ch.epgId).size
+            val suffix = if (count > 0) " 🔊$count" else ""
             row.addView(button("$mark${ch.name}$suffix") { onWatchChannel(ch) }.also {
                 (it.layoutParams as LinearLayout.LayoutParams).weight = 1f
             })
-            row.addView(button("ربط بالمحطة الحالية") {
+            // Add the currently-playing station as a commentator for this channel.
+            row.addView(button("+ معلّق") {
                 val st = service?.currentStation
                 if (st == null) {
-                    Toast.makeText(this, "شغّل محطة التعليق أولًا ثم اربطها", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "شغّل محطة التعليق أولًا ثم أضِفها", Toast.LENGTH_LONG).show()
                 } else {
-                    prefs.setChannelLink(ch.epgId, st.url)
-                    Toast.makeText(this, "رُبطت ${ch.name} بـ ${st.name}", Toast.LENGTH_SHORT).show()
+                    prefs.addChannelLink(ch.epgId, st.url)
+                    Toast.makeText(this, "أُضيف ${st.name} إلى ${ch.name}", Toast.LENGTH_SHORT).show()
                     refreshChannels()
                 }
             })
-            if (linked) row.addView(button("فكّ") {
-                prefs.clearChannelLink(ch.epgId); refreshChannels()
-            })
+            if (count > 0) row.addView(button("معلّقو $count") { editCommentators(ch) })
             channelsBox.addView(row)
         }
+    }
+
+    /** List a channel's linked commentators with the option to remove any. */
+    private fun editCommentators(ch: TvChannel) {
+        val urls = prefs.channelLinks(ch.epgId)
+        val names = urls.map { url -> prefs.stations.firstOrNull { it.url == url }?.name ?: url }.toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("معلّقو ${ch.name} — اختر للحذف")
+            .setItems(names) { _, i ->
+                prefs.removeChannelLink(ch.epgId, urls[i]); refreshChannels()
+                Toast.makeText(this, "حُذف ${names[i]}", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("إغلاق", null)
+            .show()
     }
 
     private var stationFilter: String = ""

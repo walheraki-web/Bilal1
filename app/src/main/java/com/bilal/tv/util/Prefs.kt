@@ -104,11 +104,24 @@ class Prefs(context: Context) {
         get() = sp.getString("watchingEpgId", null)
         set(v) = sp.edit().putString("watchingEpgId", v).apply()
 
-    /** The station URL linked to a TV channel (by EPG id), auto-played when that channel is chosen. */
-    fun channelLink(epgId: String): String? = sp.getString("link:$epgId", null)
-    fun setChannelLink(epgId: String, stationUrl: String) =
-        sp.edit().putString("link:$epgId", stationUrl).apply()
-    fun clearChannelLink(epgId: String) = sp.edit().remove("link:$epgId").apply()
+    /** Station URLs linked to a TV channel (by EPG id) — one per commentator.
+     *  When the channel is chosen: 1 link auto-plays, several offer a picker. */
+    fun channelLinks(epgId: String): List<String> = runCatching {
+        val arr = JSONArray(sp.getString("links:$epgId", "[]"))
+        (0 until arr.length()).map { arr.getString(it) }
+    }.getOrDefault(emptyList())
+
+    fun addChannelLink(epgId: String, stationUrl: String) {
+        val cur = channelLinks(epgId)
+        if (stationUrl in cur) return
+        val arr = JSONArray(); (cur + stationUrl).forEach { arr.put(it) }
+        sp.edit().putString("links:$epgId", arr.toString()).apply()
+    }
+
+    fun removeChannelLink(epgId: String, stationUrl: String) {
+        val arr = JSONArray(); channelLinks(epgId).filter { it != stationUrl }.forEach { arr.put(it) }
+        sp.edit().putString("links:$epgId", arr.toString()).apply()
+    }
 
     var tvChannels: List<TvChannel>
         get() {

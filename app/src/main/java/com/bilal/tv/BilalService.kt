@@ -293,6 +293,24 @@ class BilalService : Service() {
         }.also { it.isDaemon = true }.start()
     }
 
+    /** Discover the receiver's currently-tuned channel via the Shizuku shell path. */
+    fun detectCurrentChannel(onResult: (String) -> Unit) {
+        if (!ShizukuCapture.isAvailable()) {
+            onResult("Shizuku غير مُفعّل — القراءة التلقائية للقناة تحتاج المسار المُصرَّح")
+            return
+        }
+        ShizukuCapture.ensurePermission(
+            onReady = {
+                ShizukuCapture.detectChannel(
+                    this,
+                    onResult = { out -> main.post { onResult(out) } },
+                    onError = { e -> main.post { onResult(e) } },
+                )
+            },
+            onError = { e -> main.post { onResult(e) } },
+        )
+    }
+
     /** Current programme title on a TV channel (by EPG id), if the guide is loaded. */
     fun currentProgramme(epgId: String): String? =
         Epg.currentTitle(epg, epgId, System.currentTimeMillis())

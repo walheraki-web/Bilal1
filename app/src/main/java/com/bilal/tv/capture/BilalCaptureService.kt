@@ -25,6 +25,38 @@ class BilalCaptureService : IBilalCapture.Stub {
         }
     }
 
+    /**
+     * Discovery only: runs a fixed list of read-only commands as the shell user
+     * to find how this DroidLogic box exposes the currently-tuned channel. The
+     * commands take no input from the app; the combined output is returned so the
+     * app (and we) can see which source names the live channel, then automate it.
+     */
+    override fun detectChannel(): String {
+        val probes = listOf(
+            "getprop | grep -iE 'channel|dtv|\\.tv\\.|program|service' ",
+            "settings get system current_channel",
+            "settings get secure current_channel",
+            "settings get global current_channel",
+            "dumpsys activity activities | grep -iE 'ResumedActivity|topResumedActivity' | head -5",
+            "content query --uri content://android.media.tv/channel --projection _id:display_number:display_name 2>/dev/null | head -40",
+            "content query --uri content://com.droidlogic.tvinput/channel 2>/dev/null | head -40",
+            "dumpsys media_session 2>/dev/null | grep -iE 'package|metadata|title' | head -20",
+        )
+        val sb = StringBuilder()
+        for (cmd in probes) {
+            sb.append("\$ ").append(cmd).append('\n')
+            val out = runCatching {
+                val p = Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd))
+                val text = p.inputStream.bufferedReader().readText() +
+                    p.errorStream.bufferedReader().readText()
+                p.waitFor()
+                text
+            }.getOrElse { "  <err: ${it.message}>\n" }
+            sb.append(out.ifBlank { "  <empty>\n" }).append("\n")
+        }
+        return sb.toString()
+    }
+
     override fun destroy() {
         worker?.interrupt()
         worker = null

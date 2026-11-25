@@ -82,6 +82,26 @@ object ShizukuCapture {
             .onFailure { onError("فشل الربط بـ Shizuku: ${it.message}") }
     }
 
+    /** Binds the privileged service, runs channel discovery, returns the output. */
+    fun detectChannel(context: Context, onResult: (String) -> Unit, onError: (String) -> Unit) {
+        val a = Shizuku.UserServiceArgs(
+            ComponentName(context.packageName, BilalCaptureService::class.java.name),
+        ).daemon(false).processNameSuffix("detect").debuggable(false).version(1)
+        val c = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                runCatching {
+                    val svc = IBilalCapture.Stub.asInterface(binder)
+                    val out = svc.detectChannel()
+                    onResult(out ?: "(لا ناتج)")
+                }.onFailure { onError("فشل الاكتشاف: ${it.message}") }
+                runCatching { Shizuku.unbindUserService(a, this, true) }
+            }
+            override fun onServiceDisconnected(name: ComponentName?) {}
+        }
+        runCatching { Shizuku.bindUserService(a, c) }
+            .onFailure { onError("فشل الربط بـ Shizuku: ${it.message}") }
+    }
+
     fun stop() {
         val a = args ?: return
         val c = conn ?: return
