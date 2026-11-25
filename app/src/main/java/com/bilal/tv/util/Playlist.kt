@@ -64,6 +64,36 @@ object Playlist {
         return out.distinctBy { it.url }
     }
 
+    /**
+     * Extracts TV channels (name + EPG id) from an extended M3U, reading the
+     * tvg-id / tvg-name attributes on each #EXTINF line. Channels without a
+     * tvg-id are skipped — the id is what pairs a channel with the guide.
+     */
+    fun parseChannels(raw: String): List<TvChannel> {
+        val text = raw.removePrefix("﻿").replace("\r\n", "\n").replace('\r', '\n')
+        val out = ArrayList<TvChannel>()
+        for (line in text.split("\n")) {
+            val l = line.trim()
+            if (!l.startsWith("#EXTINF", true)) continue
+            val id = attr(l, "tvg-id")?.takeIf { it.isNotEmpty() } ?: continue
+            val comma = l.lastIndexOf(',')
+            val display = if (comma >= 0) l.substring(comma + 1).trim() else ""
+            val name = display.ifEmpty { attr(l, "tvg-name") ?: id }
+            out += TvChannel(name, id)
+        }
+        return out.distinctBy { it.epgId }
+    }
+
+    /** Reads an attribute value like tvg-id="canal.fr" from an #EXTINF line. */
+    private fun attr(line: String, key: String): String? {
+        val k = "$key=\""
+        val i = line.indexOf(k, ignoreCase = true)
+        if (i < 0) return null
+        val start = i + k.length
+        val end = line.indexOf('"', start)
+        return if (end > start) line.substring(start, end) else null
+    }
+
     /** Strips a trailing '#' (and whitespace) that some cfg formats append to URLs. */
     private fun cleanUrl(s: String): String = s.trim().trimEnd('#').trim()
 

@@ -7,6 +7,9 @@ import org.json.JSONObject
 
 data class Station(val name: String, val url: String)
 
+/** A live TV channel the user watches in the receiver, with its EPG id for the guide. */
+data class TvChannel(val name: String, val epgId: String)
+
 /** Typed access to Bilal's settings and per-station memory. */
 class Prefs(context: Context) {
     val sp: SharedPreferences = context.getSharedPreferences("bilal", Context.MODE_PRIVATE)
@@ -87,5 +90,39 @@ class Prefs(context: Context) {
             val arr = JSONArray()
             list.forEach { arr.put(JSONObject().put("name", it.name).put("url", it.url)) }
             sp.edit().putString("stations", arr.toString()).apply()
+        }
+
+    // --- EPG / channel linking ---
+
+    /** XMLTV guide source (URL to .xml or .xml.gz), used to show the current programme. */
+    var epgUrl: String?
+        get() = sp.getString("epgUrl", null)
+        set(v) = sp.edit().putString("epgUrl", v).apply()
+
+    /** The TV channel the user last told Bilal they're watching (its EPG id). */
+    var watchingEpgId: String?
+        get() = sp.getString("watchingEpgId", null)
+        set(v) = sp.edit().putString("watchingEpgId", v).apply()
+
+    /** The station URL linked to a TV channel (by EPG id), auto-played when that channel is chosen. */
+    fun channelLink(epgId: String): String? = sp.getString("link:$epgId", null)
+    fun setChannelLink(epgId: String, stationUrl: String) =
+        sp.edit().putString("link:$epgId", stationUrl).apply()
+    fun clearChannelLink(epgId: String) = sp.edit().remove("link:$epgId").apply()
+
+    var tvChannels: List<TvChannel>
+        get() {
+            return runCatching {
+                val arr = JSONArray(sp.getString("tvChannels", "[]"))
+                (0 until arr.length()).map {
+                    val o = arr.getJSONObject(it)
+                    TvChannel(o.getString("name"), o.getString("epgId"))
+                }
+            }.getOrDefault(emptyList())
+        }
+        set(list) {
+            val arr = JSONArray()
+            list.forEach { arr.put(JSONObject().put("name", it.name).put("epgId", it.epgId)) }
+            sp.edit().putString("tvChannels", arr.toString()).apply()
         }
 }

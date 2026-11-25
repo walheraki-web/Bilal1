@@ -22,8 +22,10 @@ import com.bilal.tv.sync.FeatureTrack
 import com.bilal.tv.sync.SyncCoordinator
 import com.bilal.tv.sync.SyncPolicy
 import com.bilal.tv.util.BLog
+import com.bilal.tv.util.Epg
 import com.bilal.tv.util.Prefs
 import com.bilal.tv.util.Station
+import java.util.zip.GZIPInputStream
 
 /**
  * The always-on brain. Plays the station, keeps the A/V sync, recovers from
@@ -251,6 +253,55 @@ class BilalService : Service() {
             .onFailure { status("تعذّر كتم القناة: ${it.message}") }
         status(if (receiver.tvMuted) "المسموع الآن: الصوتية (القناة مكتومة)" else "المسموع الآن: صوت القناة")
         return receiver.tvMuted
+    }
+
+    // --- EPG guide + channel linking ---
+
+    @Volatile private var epg: List<Epg.Programme> = emptyList()
+    val epgLoaded get() = epg.isNotEmpty()
+
+    /** Download and parse the XMLTV guide (plain or .gz) off the main thread. */
+    fun loadEpg(url: String, onDone: (Boolean, String) -> Unit) {
+        status("يُحمّل دليل البرامج…")
+        Thread {
+            val res = runCatching {
+                val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 15000; readTimeout = 20000
+                    setRequestProperty("User-Agent", "Bilal/1.0")
+                }
+                conn.inputStream.use { raw ->
+                    val gz = url.endsWith(".gz", true) ||
+                        conn.contentType?.contains("gzip", true) == true
+                    val stream = if (gz) GZIPInputStream(raw) else raw
+                    stream.bufferedReader(Charsets.UTF_8).readText()
+                }
+            }
+            res.onSuccess { xml ->
+                val parsed = runCatching { Epg.parse(xml) }.getOrDefault(emptyList())
+                epg = parsed
+                main.post {
+                    val msg = "حُمّل الدليل: ${parsed.size} برنامجًا"
+                    status(msg); onDone(parsed.isNotEmpty(), msg)
+                }
+            }.onFailure {
+                BLog.e("epg load", it)
+                main.post {
+                    val msg = "تعذّر تحميل الدليل: ${it.message}"
+                    status(msg); onDone(false, msg)
+                }
+            }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    /** Current programme title on a TV channel (by EPG id), if the guide is loaded. */
+    fun currentProgramme(epgId: String): String? =
+        Epg.currentTitle(epg, epgId, System.currentTimeMillis())
+
+    /** Play a station and immediately mute the live channel's own sound. */
+    fun playAndMute(station: Station) {
+        play(station)
+        runCatching { receiver.muteTv(true) }
+            .onFailure { status("تعذّر كتم القناة: ${it.message}") }
     }
 
     private fun onStreamRecovered() {

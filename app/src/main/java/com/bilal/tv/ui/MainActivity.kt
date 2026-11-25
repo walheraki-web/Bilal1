@@ -25,6 +25,7 @@ import com.bilal.tv.util.BLog
 import com.bilal.tv.util.Playlist
 import com.bilal.tv.util.Prefs
 import com.bilal.tv.util.Station
+import com.bilal.tv.util.TvChannel
 
 /**
  * Minimal remote-friendly UI: pick/add a station, Play, Sync, toggle movie
@@ -36,6 +37,7 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
 
     private companion object {
         const val REQ_PICK_PLAYLIST = 91
+        const val REQ_PICK_CHANNELS = 92
     }
 
     private lateinit var prefs: Prefs
@@ -43,6 +45,8 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
     private lateinit var status: TextView
     private lateinit var result: TextView
     private lateinit var stationsBox: LinearLayout
+    private lateinit var channelsBox: LinearLayout
+    private var epgTitle: TextView? = null
 
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, b: IBinder?) {
@@ -170,6 +174,13 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
                 .onFailure { Toast.makeText(this, "تعذّر الحفظ: ${it.message}", Toast.LENGTH_LONG).show() }
         })
 
+        // Watch-a-match flow: pick the channel you're watching; the guide names
+        // the programme and Bilal plays the linked commentary station, muted TV.
+        panel.addView(section("القناة التي تشاهدها + دليل البرامج (EPG)"))
+        channelsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        panel.addView(epgSection())
+        refreshChannels()
+
         // Station list last — longest section after a CFG import.
         panel.addView(section("المحطة (قناة الصوت) — اختر واحدة"))
         panel.addView(addStationRow())
@@ -217,6 +228,104 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
     private fun refreshValues() = runOnUiThread {
         videoDelayRow?.let { it.value.text = "${it.read() / 1000.0} ث" }
         audioDelayRow?.let { it.value.text = "${it.read() / 1000.0} ث" }
+    }
+
+    // EPG URL + channel-list import + "now playing" title.
+    private fun epgSection(): View {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        val epgRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val epgUrl = EditText(this).apply {
+            hint = "رابط دليل البرامج XMLTV (xml أو xml.gz)"
+            setText(prefs.epgUrl ?: "")
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#80FFFFFF"))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f)
+        }
+        epgRow.addView(epgUrl)
+        epgRow.addView(button("تحميل الدليل") {
+            val u = epgUrl.text.toString().trim()
+            if (u.isEmpty()) { Toast.makeText(this, "أدخل رابط الدليل", Toast.LENGTH_SHORT).show(); return@button }
+            prefs.epgUrl = u
+            service?.loadEpg(u) { _, _ -> runOnUiThread { refreshChannels() } }
+        })
+        box.addView(epgRow)
+
+        box.addView(button("استيراد قائمة القنوات (m3u بـ tvg-id)") {
+            runCatching {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+                }
+                startActivityForResult(intent, REQ_PICK_CHANNELS)
+            }.onFailure { Toast.makeText(this, "تعذّر فتح الملفات: ${it.message}", Toast.LENGTH_LONG).show() }
+        })
+
+        epgTitle = label("—")
+        box.addView(epgTitle!!)
+        box.addView(channelsBox)
+        return box
+    }
+
+    /** Called when the user says "I'm watching this channel": show its programme,
+     *  then auto-play the linked station (muted TV) or filter stations by the title. */
+    private fun onWatchChannel(ch: TvChannel) {
+        prefs.watchingEpgId = ch.epgId
+        val title = service?.currentProgramme(ch.epgId)
+        epgTitle?.text = if (title != null) "الآن على ${ch.name}: $title" else "الآن على ${ch.name}: (لا دليل)"
+
+        val linkedUrl = prefs.channelLink(ch.epgId)
+        val linked = linkedUrl?.let { url -> prefs.stations.firstOrNull { it.url == url } }
+        if (linked != null) {
+            service?.playAndMute(linked)
+            Toast.makeText(this, "تشغيل ${linked.name} وكتم صوت القناة", Toast.LENGTH_SHORT).show()
+        } else {
+            // No saved link: seed the station search with the programme title so the
+            // matching commentary station is easy to find and link.
+            stationFilter = title?.let { keywordsOf(it) } ?: ""
+            refreshStations()
+            Toast.makeText(this, "اختر محطة التعليق ثم اضغط «ربط بهذه القناة»", Toast.LENGTH_LONG).show()
+        }
+        refreshChannels()
+    }
+
+    /** A short search seed from a programme title (longest word, no digits/symbols). */
+    private fun keywordsOf(title: String): String =
+        title.split(' ', '-', ':', '|', '(', ')').map { it.trim() }
+            .filter { it.length >= 3 && it.any { c -> c.isLetter() } }
+            .maxByOrNull { it.length } ?: ""
+
+    private fun refreshChannels() {
+        if (!::channelsBox.isInitialized) return
+        channelsBox.removeAllViews()
+        val channels = prefs.tvChannels
+        if (channels.isEmpty()) {
+            channelsBox.addView(label("لا توجد قنوات بعد. استورد قائمة m3u تحوي tvg-id لكل قناة."))
+            return
+        }
+        val watching = prefs.watchingEpgId
+        for (ch in channels) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val mark = if (ch.epgId == watching) "● " else ""
+            val linked = prefs.channelLink(ch.epgId) != null
+            val suffix = if (linked) " 🔊" else ""
+            row.addView(button("$mark${ch.name}$suffix") { onWatchChannel(ch) }.also {
+                (it.layoutParams as LinearLayout.LayoutParams).weight = 1f
+            })
+            row.addView(button("ربط بالمحطة الحالية") {
+                val st = service?.currentStation
+                if (st == null) {
+                    Toast.makeText(this, "شغّل محطة التعليق أولًا ثم اربطها", Toast.LENGTH_LONG).show()
+                } else {
+                    prefs.setChannelLink(ch.epgId, st.url)
+                    Toast.makeText(this, "رُبطت ${ch.name} بـ ${st.name}", Toast.LENGTH_SHORT).show()
+                    refreshChannels()
+                }
+            })
+            if (linked) row.addView(button("فكّ") {
+                prefs.clearChannelLink(ch.epgId); refreshChannels()
+            })
+            channelsBox.addView(row)
+        }
     }
 
     private var stationFilter: String = ""
@@ -346,13 +455,44 @@ class MainActivity : android.app.Activity(), BilalService.Listener {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_PICK_PLAYLIST && resultCode == RESULT_OK) {
-            val uri = data?.data ?: return
-            Toast.makeText(this, "جارٍ قراءة الملف…", Toast.LENGTH_SHORT).show()
-            importStations {
-                contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+        if (resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        when (requestCode) {
+            REQ_PICK_PLAYLIST -> {
+                Toast.makeText(this, "جارٍ قراءة الملف…", Toast.LENGTH_SHORT).show()
+                importStations {
+                    contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+                }
+            }
+            REQ_PICK_CHANNELS -> {
+                Toast.makeText(this, "جارٍ قراءة قائمة القنوات…", Toast.LENGTH_SHORT).show()
+                importChannels {
+                    contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+                }
             }
         }
+    }
+
+    /** Reads an M3U via [read] on a background thread and merges TV channels (tvg-id). */
+    private fun importChannels(read: () -> String) {
+        Thread {
+            val result = runCatching { Playlist.parseChannels(read()) }
+            runOnUiThread {
+                result.onSuccess { parsed ->
+                    if (parsed.isEmpty()) {
+                        Toast.makeText(this, "لم يُعثر على قنوات بمعرّف tvg-id في الملف", Toast.LENGTH_LONG).show()
+                    } else {
+                        val existing = prefs.tvChannels
+                        val ids = existing.map { it.epgId }.toHashSet()
+                        prefs.tvChannels = existing + parsed.filterNot { it.epgId in ids }
+                        refreshChannels()
+                        Toast.makeText(this, "أُضيفت ${prefs.tvChannels.size - existing.size} قناة", Toast.LENGTH_LONG).show()
+                    }
+                }.onFailure {
+                    Toast.makeText(this, "تعذّر قراءة القنوات: ${it.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     /** Reads raw playlist text via [read] on a background thread, then merges. */
